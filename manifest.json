@@ -3,14 +3,16 @@
   "name": "VoiceBrowser — Full Voice Control",
   "version": "0.1.0",
   "description": "Control your browser entirely by voice — click, type, scroll, navigate, and complete multi-step flows hands-free, powered by Gemini.",
-  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "permissions": ["activeTab", "scripting", "storage", "tabs", "sidePanel"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html",
     "default_title": "VoiceBrowser"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "content_scripts": [
     {

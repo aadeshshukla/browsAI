@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>VoiceBrowser</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <div><h1>VoiceBrowser</h1><p id="sessionState" class="session-state">Session paused</p></div>
+      <button id="newTaskBtn" class="text-btn">New task</button>
+    </header>
+    <section id="conversation" class="conversation" aria-live="polite"><p class="empty">Start a session, then speak naturally. Say “stop listening” when you are done.</p></section>
+    <p id="transcript" class="transcript" aria-live="polite"></p>
+    <p id="status" class="status" aria-live="polite"></p>
+    <div class="controls"><button id="micBtn" class="mic-btn"><span>🎤</span> <span id="micLabel">Start conversation</span></button><button id="stopBtn" class="stop-btn" disabled>End session</button></div>
+    <details class="settings"><summary>Settings</summary><label for="apiKey">Gemini API key</label><input id="apiKey" type="password" placeholder="AIza…" autocomplete="off" /><label for="model">Model</label><input id="model" type="text" placeholder="gemini-2.0-flash-lite" /><button id="saveBtn" class="save-btn">Save settings</button><p id="saveStatus" class="save-status"></p></details>
+  </main>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

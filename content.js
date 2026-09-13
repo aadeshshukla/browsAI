@@ -9,7 +9,7 @@ const VOICE_ATTR = "data-voice-id";
 const INTERACTIVE_SELECTOR = [
   "a[href]", "button", "input", "textarea", "select",
   "[role='button']", "[role='link']", "[role='textbox']",
-  "[contenteditable='true']", "[onclick]"
+  "[contenteditable='true']", "[onclick]", "canvas", "[role='application']"
 ].join(",");
 
 function isVisible(el) {
@@ -22,6 +22,7 @@ function isVisible(el) {
 
 function describeElement(el) {
   const tag = el.tagName.toLowerCase();
+  const rect = el.getBoundingClientRect();
   const label =
     el.getAttribute("aria-label") ||
     el.getAttribute("placeholder") ||
@@ -33,7 +34,9 @@ function describeElement(el) {
     tag,
     type: el.type || null,
     label,
-    role: el.getAttribute("role") || null
+    role: el.getAttribute("role") || null,
+    // Coordinates for draw/drag actions are normalized (0 to 1) within this box.
+    bounds: { width: Math.round(rect.width), height: Math.round(rect.height) }
   };
 }
 
@@ -64,6 +67,29 @@ function findByVoiceId(id) {
 function dispatchInputEvents(el) {
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function pointInElement(el, point) {
+  const rect = el.getBoundingClientRect();
+  const x = Math.max(0, Math.min(1, Number(point?.x))) * rect.width + rect.left;
+  const y = Math.max(0, Math.min(1, Number(point?.y))) * rect.height + rect.top;
+  return { x, y };
+}
+
+function dispatchPointer(el, type, point, buttons) {
+  const init = { bubbles: true, cancelable: true, composed: true, clientX: point.x, clientY: point.y, button: 0, buttons, pointerId: 1, pointerType: "mouse", isPrimary: true };
+  if (window.PointerEvent) el.dispatchEvent(new PointerEvent(type, init));
+  const mouseType = type.replace("pointer", "mouse");
+  el.dispatchEvent(new MouseEvent(mouseType, init));
+}
+
+function drawPath(el, points) {
+  if (!Array.isArray(points) || points.length < 2) throw new Error("Draw needs at least two normalized points");
+  const path = points.map(point => pointInElement(el, point));
+  el.scrollIntoView({ block: "center", behavior: "instant" });
+  dispatchPointer(el, "pointerdown", path[0], 1);
+  for (const point of path.slice(1)) dispatchPointer(el, "pointermove", point, 1);
+  dispatchPointer(el, "pointerup", path[path.length - 1], 0);
 }
 
 function executeAction(action) {
@@ -99,6 +125,18 @@ function executeAction(action) {
     case "scroll": {
       const amount = direction === "up" ? -600 : 600;
       window.scrollBy({ top: amount, behavior: "smooth" });
+      break;
+    }
+    case "drag": {
+      const el = findByVoiceId(target_id);
+      if (!el) throw new Error(`No element with id ${target_id}`);
+      drawPath(el, [action.start, action.end]);
+      break;
+    }
+    case "draw": {
+      const el = findByVoiceId(target_id);
+      if (!el) throw new Error(`No drawing surface with id ${target_id}`);
+      drawPath(el, action.points);
       break;
     }
     case "submit": {

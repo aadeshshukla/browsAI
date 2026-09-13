@@ -26,12 +26,12 @@ Files you'll be editing going forward:
 2. Toggle **Developer mode** on (top right)
 3. Click **Load unpacked**
 4. Select the `voice-browser-extension` folder
-5. The VoiceBrowser icon should appear in your toolbar (pin it for easy access)
+5. The VoiceBrowser icon should appear in your toolbar (pin it for easy access). Click it to open the persistent side panel.
 
 ## 4. Add your API key
 
-1. Click the VoiceBrowser icon
-2. Open **Settings** at the bottom of the popup
+1. Click the VoiceBrowser icon to open its side panel
+2. Open **Settings** at the bottom of the panel
 3. Paste your Gemini API key, leave the model field as `gemini-2.0-flash-lite`
    (or change it later if Google renames/deprecates it — check
    https://ai.google.dev/gemini-api/docs/models for current model IDs)
@@ -40,7 +40,7 @@ Files you'll be editing going forward:
 ## 5. Try it
 
 1. Go to any normal webpage (not `chrome://` pages — extensions can't run there)
-2. Click the VoiceBrowser icon, click the mic button, say a command like:
+2. Click the VoiceBrowser icon, click **Start conversation**, then say a command like:
    - "scroll down"
    - "click the search button"
    - "type hello world into the search box"
@@ -49,7 +49,7 @@ Files you'll be editing going forward:
 
 ## Reloading after you edit code
 
-Every time you change `background.js` or `content.js`:
+Every time you change `background.js`, `content.js`, or the side-panel files:
 1. Go to `chrome://extensions`
 2. Click the reload icon on the VoiceBrowser card
 3. **Refresh the webpage** you're testing on too (content scripts only
