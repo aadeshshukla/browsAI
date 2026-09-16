@@ -1,4 +1,6 @@
-const MAX_STEPS = 8;
+// A task can legitimately need several screens of traversal. Progress and a
+// hard ceiling, rather than a tiny fixed allowance, keep this autonomous.
+const MAX_STEPS = 48;
 const DEFAULT_MODEL = "gemini-2.0-flash-lite";
 const BROWSER_ACTION_TYPES = new Set(["new_tab", "close_tab", "go_back", "go_forward", "navigate"]);
 const PAGE_ACTION_TYPES = new Set(["click", "type", "select", "scroll", "submit", "drag", "draw", "speak"]);
@@ -29,13 +31,13 @@ Every action MUST be an object in one of these exact forms:
 - {"type":"click","target_id":"id from current page"}
 - {"type":"type","target_id":"id from current page","value":"text"}
 - {"type":"select","target_id":"id from current page","value":"option value"}
-- {"type":"scroll","direction":"up" or "down"}
+- {"type":"scroll","direction":"up" or "down","amount":0.15..3 (optional viewport heights; default 0.85)}
 - {"type":"submit","target_id":"id from current page"}
 - {"type":"drag","target_id":"id from current page","start":{"x":0..1,"y":0..1},"end":{"x":0..1,"y":0..1}}
 - {"type":"draw","target_id":"canvas/application id from current page","points":[{"x":0..1,"y":0..1},{"x":0..1,"y":0..1},...]}
 - {"type":"speak","value":"short response"}
 - {"type":"new_tab","value":"optional URL"}, {"type":"close_tab"}, {"type":"go_back"}, {"type":"go_forward"}, or {"type":"navigate","value":"URL"}.
-Use only ids in the current page. Never invent action types, property names, or ids. For drag and draw, x/y are normalized within the target box: 0 is left/top and 1 is right/bottom. If the user says to manually draw after selecting a pencil/pen/brush, use draw with a multi-point path on the visible canvas or application surface; never replace drawing with a click. If the user says to move a selected pencil, use draw or drag, not click. If the request is vague (for example, just "click"), ask what to click with actions:[{"type":"speak","value":"..."}] and done:true. Never repeat an action listed as failed in history. Prefer one page-changing action then stop to re-scan. If information is missing, ask one concise question using speak and done:true. Carry out ordinary authoring work on websites, including creating or editing GitHub files, issues, comments, and pull requests. Ask for confirmation only before irreversible deletion, purchases, payment, or entering passwords or one-time codes.`;
+Use only ids in the current page. Never invent action types, property names, or ids. The page includes a scroll object with current position, remaining distance, and bottom/top flags. You may repeat scrolling while the page position changes; choose its amount based on the task and remaining distance. Do not scroll farther in a direction when already at that edge. A scroll is progress, not completion: for requests to reach the end, find something farther down, or read a page, keep done:false and re-scan after each scroll until the goal is met or the relevant edge is reached. For drag and draw, x/y are normalized within the target box: 0 is left/top and 1 is right/bottom. If the user says to manually draw after selecting a pencil/pen/brush, use draw with a multi-point path on the visible canvas or application surface; never replace drawing with a click. If the user says to move a selected pencil, use draw or drag, not click. If the request is vague (for example, just "click"), ask what to click with actions:[{"type":"speak","value":"..."}] and done:true. Never repeat an action listed as failed in history. Prefer one page-changing action then stop to re-scan. If information is missing, ask one concise question using speak and done:true. Carry out ordinary authoring work on websites, including creating or editing GitHub files, issues, comments, and pull requests. Ask for confirmation only before irreversible deletion, purchases, payment, or entering passwords or one-time codes.`;
 }
 async function callGemini({ apiKey, model, transcript, history, pageMap, session }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -70,6 +72,7 @@ function validateActions(actions, page) {
     if (!action || (!PAGE_ACTION_TYPES.has(action.type) && !BROWSER_ACTION_TYPES.has(action.type))) return "unknown action";
     if (["click", "type", "select", "submit", "drag", "draw"].includes(action.type) && !ids.has(String(action.target_id))) return `invalid target id for ${action.type}`;
     if (action.type === "navigate" && !action.value) return "navigate requires a URL";
+    if (action.type === "scroll" && action.amount != null && (!Number.isFinite(Number(action.amount)) || Number(action.amount) < 0.15 || Number(action.amount) > 3)) return "scroll amount must be between 0.15 and 3 viewport heights";
     if (action.type === "drag" && (!action.start || !action.end)) return "drag requires start and end points";
     if (action.type === "draw" && (!Array.isArray(action.points) || action.points.length < 2)) return "draw requires at least two points";
     const points = action.type === "drag" ? [action.start, action.end] : action.type === "draw" ? action.points : [];
@@ -114,7 +117,10 @@ async function handleVoiceCommand(transcript, startTabId) {
     }
     if (validationError) return { ok: false, message: `I stopped because the plan was unsafe: ${validationError}.` };
     if (!result.actions?.length && !result.done) return { ok: false, message: "I stopped because the assistant produced no next action." };
-    const signature = JSON.stringify(result.actions);
+    // Identical scroll instructions are expected while traversing a long page.
+    // They are only a loop if the page has not moved since the prior decision.
+    const scrollState = pageMap.scroll ? `${pageMap.url}:${pageMap.scroll.top}:${pageMap.scroll.documentHeight}` : pageMap.url;
+    const signature = `${scrollState}|${JSON.stringify(result.actions)}`;
     if (signature === lastSignature) return { ok: false, message: "I stopped to avoid repeating the same action." };
     lastSignature = signature;
     const pageActions = result.actions.filter(action => PAGE_ACTION_TYPES.has(action.type) && action.type !== "speak");
@@ -142,7 +148,7 @@ async function handleVoiceCommand(transcript, startTabId) {
     }
     await wait(700);
   }
-  const message = "I stopped after eight steps so I do not keep acting without progress.";
+  const message = `I stopped after ${MAX_STEPS} steps so I do not keep acting without progress.`;
   updateSummary(session, transcript, message); remember(session, "assistant", message); await saveSession(startTabId, session);
   return { ok: false, message };
 }
