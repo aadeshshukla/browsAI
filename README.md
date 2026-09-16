@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # VoiceBrowser
 
 VoiceBrowser is an experimental Chrome extension that lets you operate webpages with natural voice commands. It combines Chrome's built-in speech recognition with Google's Gemini API to understand a request, inspect the current page's interactive controls, and carry out the required browser actions.
@@ -109,3 +110,6 @@ For a more detailed checklist, see [SETUP.md](SETUP.md).
 ## Contributing
 
 Contributions are welcome while the project is evolving. Please keep changes focused, test them by loading the unpacked extension in Chrome, and describe the website/workflow used for testing in your change notes.
+=======
+This project is on progress , anyone interested can mail me(aadeshshukla470@gmail.com) if interested to contribute 
+>>>>>>> 7518573d22dbc2de409aa1b5bbf914be8fe8da43
