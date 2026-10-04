@@ -1,14 +1,31 @@
 const $ = id => document.getElementById(id);
 const micBtn = $("micBtn"), micLabel = $("micLabel"), stopBtn = $("stopBtn"), transcriptEl = $("transcript"), statusEl = $("status"), stateEl = $("sessionState"), conversationEl = $("conversation");
-const apiKeyInput = $("apiKey"), modelInput = $("model"), saveStatus = $("saveStatus");
+const apiKeyInput = $("apiKey"), modelInput = $("model"), modeInput = $("mode"), saveStatus = $("saveStatus");
+const confirmOverlay = $("confirmOverlay"), confirmContext = $("confirmContext"), confirmList = $("confirmList"), confirmApprove = $("confirmApprove"), confirmDeny = $("confirmDeny");
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition, sessionActive = false, listening = false, processing = false, autoListen = false, finalText = "";
 function addTurn(kind, text) { const empty = conversationEl.querySelector(".empty"); if (empty) empty.remove(); const p = document.createElement("p"); p.className = kind; p.textContent = `${kind === "user" ? "You" : "VoiceBrowser"}: ${text}`; conversationEl.append(p); conversationEl.scrollTop = conversationEl.scrollHeight; }
 function setSessionUi(active) { sessionActive = active; stopBtn.disabled = !active; micBtn.classList.toggle("listening", listening); stateEl.textContent = active ? (processing ? "Working…" : listening ? "Listening…" : "Conversation active") : "Session paused"; micLabel.textContent = active ? (listening ? "Listening — tap to pause" : "Resume listening") : "Start conversation"; }
 async function activeTab() { return (await chrome.tabs.query({ active: true, currentWindow: true }))[0]; }
 async function send(type, extra = {}) { return chrome.runtime.sendMessage({ type, ...extra }); }
-async function loadSettings() { const { apiKey, model } = await chrome.storage.local.get(["apiKey", "model"]); apiKeyInput.value = apiKey || ""; modelInput.value = model || "gemini-2.0-flash-lite"; }
-$("saveBtn").addEventListener("click", async () => { await chrome.storage.local.set({ apiKey: apiKeyInput.value.trim(), model: modelInput.value.trim() || "gemini-2.0-flash-lite" }); saveStatus.textContent = "Saved."; });
+async function loadSettings() { const { apiKey, model, mode } = await chrome.storage.local.get(["apiKey", "model", "mode"]); apiKeyInput.value = apiKey || ""; modelInput.value = model || "gemini-2.0-flash-lite"; modeInput.value = ["safe", "assist", "full"].includes(mode) ? mode : "assist"; }
+$("saveBtn").addEventListener("click", async () => { await chrome.storage.local.set({ apiKey: apiKeyInput.value.trim(), model: modelInput.value.trim() || "gemini-2.0-flash-lite", mode: modeInput.value }); saveStatus.textContent = "Saved."; setTimeout(() => (saveStatus.textContent = ""), 1500); });
+
+// Confirmation gate: the background worker pauses here before any risky step.
+let confirmResolve = null;
+function closeConfirm(approved) { confirmOverlay.hidden = true; confirmList.innerHTML = ""; if (confirmResolve) { confirmResolve(approved); confirmResolve = null; } }
+confirmApprove.addEventListener("click", () => closeConfirm(true));
+confirmDeny.addEventListener("click", () => closeConfirm(false));
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== "CONFIRM_ACTION") return;
+  const d = msg.detail || {};
+  confirmContext.textContent = `${d.title || "This page"} — ${d.url || ""}`;
+  (d.items || []).forEach(item => { const li = document.createElement("li"); li.textContent = `${item.type}: ${item.reason}`; confirmList.append(li); });
+  confirmOverlay.hidden = false;
+  if (confirmResolve) confirmResolve(false);
+  confirmResolve = approved => sendResponse({ approved: !!approved });
+  return true;
+});
 function beginRecognition() { if (!recognition || !sessionActive || !autoListen || processing || listening) return; finalText = ""; transcriptEl.textContent = ""; try { recognition.start(); } catch {} }
 async function processTranscript(text) {
   if (/^(stop listening|end session|goodbye)$/i.test(text.trim())) {

@@ -1,115 +1,129 @@
-<<<<<<< HEAD
 # VoiceBrowser
 
-VoiceBrowser is an experimental Chrome extension that lets you operate webpages with natural voice commands. It combines Chrome's built-in speech recognition with Google's Gemini API to understand a request, inspect the current page's interactive controls, and carry out the required browser actions.
+Version: 1.0.0
 
-For example, you can say:
+VoiceBrowser is a Chrome extension that acts like an AI browser copilot. It listens to natural speech, inspects the current page, understands the user’s goal, and safely performs common browser tasks using Gemini-powered planning.
+
+It is built to feel less like a rigid automation script and more like a practical, careful assistant that can work through real web flows while asking for confirmation when the situation is risky or ambiguous.
+
+## What it can do
+
+- Understand natural voice commands
+- Search, navigate, click, type, fill forms, scroll, submit, and open links
+- Work across multiple browser steps in a single task
+- Protect risky operations with confirmation gates
+- Detect and stop on repeated, non-progressing actions instead of looping
+- Stop when the task is ambiguous instead of guessing
+- Keep short task memory for the current tab session
+
+## Example requests
 
 - “Search for noise-cancelling headphones”
-- “Scroll down and open the first result”
+- “Open the first result”
 - “Fill in my name and email”
-- “Go back” or “open a new tab”
-- “Read the page until you find the pricing section”
-
-The aim is hands-free browsing for ordinary multi-step tasks—not just voice search.
-
-> **Project status:** work in progress / early prototype. Expect rough edges on complex websites and test carefully before relying on it for important work.
+- “Compare the top two options and tell me which is better”
+- “Go back and open the pricing section”
+- “Read the page and summarize the key points”
+- “Stop listening”
 
 ## How it works
 
-1. Open VoiceBrowser from the Chrome toolbar to show its side panel.
-2. Start a conversation and speak a request.
-3. Chrome converts your speech to text.
-4. VoiceBrowser sends the request plus a simplified map of the active page's visible, interactive elements to Gemini.
-5. Gemini returns a structured plan. The extension validates it, then clicks, types, selects, scrolls, submits, navigates, or performs another supported action.
-6. For tasks that need multiple steps, it re-scans the page and continues until the task is complete or it reaches its safety limit.
+1. The user opens the side panel and begins a session.
+2. Chrome speech recognition converts spoken input into text.
+3. VoiceBrowser gathers a compact interactive map of the page and sends it to Gemini along with recent task context.
+4. Gemini returns a structured action plan.
+5. The extension validates the plan against the current page and safety rules.
+6. It runs the allowed actions, re-scans the page, and stops if it detects the same action repeating without progress.
+7. If the site is ambiguous, it asks a clarifying question. If a step is sensitive (purchase, payment, deletion, password/code entry), it pauses for confirmation according to the automation mode.
 
-The side panel retains a small amount of task context for the current tab, so follow-up instructions can refer to the work already done. Select **New task** to clear that context.
+## Current features
 
-## Features
+- Persistent side-panel conversation UI
+- Microphone-based speech capture and transcript display
+- Safe, Assist, and Full automation modes (selectable in Settings)
+- Repeated-action detection to avoid infinite loops
+- Risk-based confirmation prompts for sensitive actions
+- Browser actions: new tab, close tab, back, forward, navigate
+- Page actions: click, type, select, submit, scroll, drag, and draw
+- Task memory scoped to the current tab
+- Short spoken and on-screen status responses
+- Configurable Gemini model and API key settings
 
-- Continuous voice sessions from a persistent Chrome side panel
-- Natural-language control of links, buttons, inputs, text areas, selects, and content-editable fields
-- Browser actions: new tab, close tab, back, forward, and navigation to a URL
-- Page actions: click, type, select, submit, scroll, drag, and draw on supported page surfaces
-- Multi-step planning with page re-scans after actions
-- Built-in guards against invalid element targets, repeated actions, and runaway task loops
-- Short spoken or on-screen status responses
-- Configurable Gemini model; defaults to `gemini-2.0-flash-lite`
+## Automation modes
+
+The extension supports three safety levels, chosen in Settings:
+
+- **Safe**: never runs sensitive steps. Purchases, payments, deletions, and password/one-time-code entry are blocked with an explanation.
+- **Assist** (default): runs ordinary actions freely, but pauses and shows a confirmation dialog in the side panel before any sensitive step.
+- **Full**: same confirmation prompt for genuinely sensitive steps (money, credentials, irreversible deletions). Chrome still blocks extension control of browser-internal pages.
+
+A step is treated as sensitive when it targets a password field, types credential/OTP/card data, or activates a control whose label or page context indicates buying, paying, deleting, or confirming.
 
 ## Requirements
 
-- Google Chrome (or another Chromium browser that supports Manifest V3 side panels)
-- A Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey)
-- A microphone and browser speech-recognition support
+- Google Chrome or a Chromium browser that supports Manifest V3 side panels
+- A Google Gemini API key from Google AI Studio
+- A working microphone and browser speech-recognition support
 
-There is no build process and no `npm install`: this project consists of plain HTML, CSS, and JavaScript files that Chrome loads directly.
+## Local setup
 
-## Install locally
+1. Clone or download this repository.
+2. Open chrome://extensions in Chrome.
+3. Enable Developer mode.
+4. Click Load unpacked.
+5. Select the project folder.
+6. Open the extension from the toolbar and click the side panel.
+7. Go to Settings and add your Gemini API key.
+8. Choose the model if needed and save.
+9. Open any normal webpage, start the session, and speak your request.
 
-1. Download or clone this repository.
-2. In Chrome, open `chrome://extensions`.
-3. Enable **Developer mode**.
-4. Select **Load unpacked**.
-5. Choose this project folder (`browsAI`).
-6. Pin the VoiceBrowser extension, then click its toolbar icon to open the side panel.
-7. In **Settings**, paste your Gemini API key and select a model if you do not want the default.
-8. Open a normal website, choose **Start conversation**, and speak your request.
+After file changes, reload the extension in chrome://extensions and refresh the page under test.
 
-After editing extension files, reload the extension on `chrome://extensions` and refresh the webpage you are testing. This ensures Chrome reinjects the page script.
+## Usage tips
 
-## Using VoiceBrowser
+- Give clear goals such as “compare the options” or “fill out the form”.
+- Use short follow-up commands like “continue”, “choose the second option”, or “go back”.
+- If the action is unclear, the assistant will ask a clarifying question.
+- When the site requires a risky step, the assistant will pause for confirmation.
 
-Start with clear, outcome-focused commands. You do not need to name every click:
+## Safety and privacy
 
-| Goal | Example command |
-| --- | --- |
-| Find information | “Search this site for laptop backpacks.” |
-| Fill a form | “Enter Jane Doe in the name field and jane@example.com in email.” |
-| Move around a page | “Scroll until you find customer reviews.” |
-| Navigate Chrome | “Open youtube.com in a new tab.” |
-| Continue a task | “Now choose the second option.” |
-| Finish listening | “Stop listening” or “end session.” |
-
-VoiceBrowser will ask a short question when the command is ambiguous, such as “click” without saying what to click.
-
-## Privacy and safety notes
-
-- Your spoken command, a compact description of the current page's interactive elements, and recent task context are sent to the Gemini API to plan actions. Review Google's terms and privacy practices before using it on sensitive pages.
-- Your Gemini API key and chosen model are saved in Chrome extension local storage. Do not share your browser profile with untrusted people.
-- The extension is designed to ask before irreversible deletion, purchases, payments, passwords, or one-time codes. Still, review actions and avoid using the prototype for sensitive or irreversible tasks.
-- Chrome prevents extensions from controlling `chrome://` pages, the Chrome Web Store, and some browser-internal pages. Browser-level navigation commands can still work where Chrome permits them.
+- The extension sends your command text, the current page structure, and recent task context to Gemini for planning.
+- API keys are stored in Chrome extension storage.
+- The tool is intentionally conservative around purchases, payments, passwords, personal data entry, and irreversible operations.
+- It stops when the page fails to show the expected state instead of blindly retrying.
+- Chrome blocks extension control over browser-internal pages such as chrome:// and the Chrome Web Store.
 
 ## Known limitations
 
-- Speech recognition depends on the browser and may not be available in every environment or language configuration.
-- The extension maps up to 150 visible interactive elements per page scan. Very dense, highly dynamic, or custom-built web apps may be difficult to control.
-- It does not have long-term conversation memory; session context is scoped to the current tab and is cleared with **New task**.
-- Some sites may block synthetic interactions or require actions the extension cannot safely reproduce.
-- The default speech-recognition language is English (US).
+- Speech recognition depends on browser support and may vary by environment.
+- Some sites are hard to automate because of dynamic UI or custom components.
+- Complex websites or page layouts may require more clarification or safer stopping points.
+- Session memory is intentionally scoped to the current tab and can be reset with New task.
+- The agent is safer than a fully autonomous browser agent, so it may ask for confirmation instead of acting immediately.
 
 ## Project structure
 
-| File | Purpose |
-| --- | --- |
-| `manifest.json` | Chrome extension metadata, permissions, and entry points |
-| `sidepanel.html`, `sidepanel.js`, `sidepanel.css` | Persistent voice-session interface and settings |
-| `background.js` | Gemini integration, action planning loop, validation, browser actions, and session storage |
-| `content.js` | Page scanning and execution of approved page-level actions |
-| `popup.html`, `popup.js`, `popup.css` | Lightweight popup interface kept alongside the side-panel experience |
-| `SETUP.md` | Additional setup, reloading, debugging, and limitation notes |
+- manifest.json — extension metadata and permissions
+- background.js — orchestration, Gemini calls, task state, risk classification, automation modes, and confirmation gating
+- content.js — page scanning and in-page action execution
+- sidepanel.html / sidepanel.js / sidepanel.css — voice session UI, settings, and confirmation dialog
+- popup.html / popup.js / popup.css — compact popup interface (legacy)
+- icons/ — 16, 48, and 128 px extension icons
+- PRIVACY.md — privacy policy (host it publicly and link it in the store listing)
+- STORE_LISTING.md — Chrome Web Store listing copy and permission justifications
+- SETUP.md — local setup and debugging notes
 
-## Development and debugging
+## Development notes
 
-- **Background service worker:** `chrome://extensions` → VoiceBrowser → **service worker**
-- **Page script:** open DevTools on the webpage being controlled; logs from `content.js` appear in that page console
-- **Side panel:** inspect the side panel from Chrome DevTools when troubleshooting the interface
-
-For a more detailed checklist, see [SETUP.md](SETUP.md).
+- Background service worker: chrome://extensions → VoiceBrowser → Service worker
+- Side panel: inspect the panel directly from DevTools to debug UI state
+- Page script: open DevTools on the page being controlled for content script debugging
 
 ## Contributing
 
-Contributions are welcome while the project is evolving. Please keep changes focused, test them by loading the unpacked extension in Chrome, and describe the website/workflow used for testing in your change notes.
-=======
-This project is on progress , anyone interested can mail me(aadeshshukla470@gmail.com) if interested to contribute 
->>>>>>> 7518573d22dbc2de409aa1b5bbf914be8fe8da43
+Contributions are welcome as the project evolves. Keep changes focused, validate in Chrome with the unpacked extension, and document the site or workflow used during testing.
+
+## Status
+
+The project is in a practical local prototype stage: it is usable for real testing in Chrome and already includes strong safety and workflow-aware behavior, but it should still be treated carefully on sensitive or irreversible sites.

@@ -2,15 +2,62 @@
 // hard ceiling, rather than a tiny fixed allowance, keep this autonomous.
 const MAX_STEPS = 48;
 const DEFAULT_MODEL = "gemini-2.0-flash-lite";
+const DEFAULT_MODE = "assist";
+const MODES = new Set(["safe", "assist", "full"]);
+const CONFIRM_TIMEOUT_MS = 120000;
 const BROWSER_ACTION_TYPES = new Set(["new_tab", "close_tab", "go_back", "go_forward", "navigate"]);
 const PAGE_ACTION_TYPES = new Set(["click", "type", "select", "scroll", "submit", "drag", "draw", "speak"]);
 const SESSION_PREFIX = "voice-session:";
 
+// Text on a control that suggests a purchase, payment, deletion, or other
+// hard-to-undo step. Used only to decide when to pause for confirmation.
+const SENSITIVE_TEXT = /\b(buy|purchase|pay|payment|checkout|place order|order now|complete order|subscribe|donate|send money|transfer|wire|delete|remove|cancel|unsubscribe|reset password|change password|confirm)\b/i;
+const SENSITIVE_VALUE = /\b(otp|one[- ]?time|verification code|password|passcode|cvv|cvc|ssn|social security|card number|credit card)\b/i;
+const CHECKOUT_URL = /(checkout|payment|pay\b|billing|purchase|cart)/i;
+
 chrome.runtime.onInstalled.addListener(() => chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error));
 
 async function getSettings() {
-  const { apiKey, model } = await chrome.storage.local.get(["apiKey", "model"]);
-  return { apiKey, model: model || DEFAULT_MODEL };
+  const { apiKey, model, mode } = await chrome.storage.local.get(["apiKey", "model", "mode"]);
+  return { apiKey, model: model || DEFAULT_MODEL, mode: MODES.has(mode) ? mode : DEFAULT_MODE };
+}
+
+function findElement(pageMap, id) {
+  return (pageMap?.elements || []).find(el => String(el.id) === String(id));
+}
+
+// Decide whether an action touches money, credentials, or irreversible state.
+// Returns { level: "low" | "high", reason }.
+function classifyRisk(action, pageMap) {
+  const el = findElement(pageMap, action.target_id);
+  const label = (el?.label || "").trim();
+  if (action.type === "type") {
+    if (el?.type === "password") return { level: "high", reason: "typing into a password field" };
+    if (SENSITIVE_VALUE.test(String(action.value || ""))) return { level: "high", reason: "typing sensitive data such as a code, password, or card number" };
+  }
+  if ((action.type === "click" || action.type === "submit") && label && SENSITIVE_TEXT.test(label)) {
+    return { level: "high", reason: `"${label.slice(0, 60)}" looks like a purchase, payment, deletion, or other irreversible step` };
+  }
+  if ((action.type === "submit" || action.type === "click") && CHECKOUT_URL.test(pageMap?.url || "") && SENSITIVE_TEXT.test(label)) {
+    return { level: "high", reason: "acting on a checkout or payment page" };
+  }
+  return { level: "low" };
+}
+
+// Ask the side panel (if open) to confirm a risky step. Fails safe: no panel or
+// no answer within the timeout is treated as a denial.
+function requestConfirmation(detail) {
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = value => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } };
+    const timer = setTimeout(() => finish(false), CONFIRM_TIMEOUT_MS);
+    try {
+      chrome.runtime.sendMessage({ type: "CONFIRM_ACTION", detail }, response => {
+        if (chrome.runtime.lastError || !response) return finish(false);
+        finish(response.approved === true);
+      });
+    } catch { finish(false); }
+  });
 }
 function sessionKey(tabId) { return `${SESSION_PREFIX}${tabId}`; }
 async function getSession(tabId) {
@@ -24,7 +71,10 @@ function updateSummary(session, transcript, message) {
   session.summary = `Goal: ${session.goal}. Latest user request: ${transcript}. Latest outcome: ${message}`.slice(0, 900);
 }
 
-function buildSystemPrompt() {
+function buildSystemPrompt(mode) {
+  const safetyLine = mode === "safe"
+    ? `The user is in SAFE mode. Do not plan purchases, payments, deletions, or entering passwords or one-time codes; if the task seems to require one, stop and explain why with speak and done:true.`
+    : `The user is in ${mode === "full" ? "FULL" : "ASSIST"} mode. You may plan sensitive steps, but the extension will pause and ask the user to confirm any purchase, payment, deletion, or password/one-time-code entry before it runs, so keep such steps explicit and separate.`;
   return `You are a careful persistent browser voice assistant. Reply with STRICT JSON only, never prose or markdown.
 The exact response shape is: {"actions":[],"done":true,"message":"short status","speak":"optional short spoken reply"}.
 Every action MUST be an object in one of these exact forms:
@@ -37,12 +87,12 @@ Every action MUST be an object in one of these exact forms:
 - {"type":"draw","target_id":"canvas/application id from current page","points":[{"x":0..1,"y":0..1},{"x":0..1,"y":0..1},...]}
 - {"type":"speak","value":"short response"}
 - {"type":"new_tab","value":"optional URL"}, {"type":"close_tab"}, {"type":"go_back"}, {"type":"go_forward"}, or {"type":"navigate","value":"URL"}.
-Use only ids in the current page. Never invent action types, property names, or ids. The page includes a scroll object with current position, remaining distance, and bottom/top flags. You may repeat scrolling while the page position changes; choose its amount based on the task and remaining distance. Do not scroll farther in a direction when already at that edge. A scroll is progress, not completion: for requests to reach the end, find something farther down, or read a page, keep done:false and re-scan after each scroll until the goal is met or the relevant edge is reached. For drag and draw, x/y are normalized within the target box: 0 is left/top and 1 is right/bottom. If the user says to manually draw after selecting a pencil/pen/brush, use draw with a multi-point path on the visible canvas or application surface; never replace drawing with a click. If the user says to move a selected pencil, use draw or drag, not click. If the request is vague (for example, just "click"), ask what to click with actions:[{"type":"speak","value":"..."}] and done:true. Never repeat an action listed as failed in history. Prefer one page-changing action then stop to re-scan. If information is missing, ask one concise question using speak and done:true. Carry out ordinary authoring work on websites, including creating or editing GitHub files, issues, comments, and pull requests. Ask for confirmation only before irreversible deletion, purchases, payment, or entering passwords or one-time codes.`;
+Use only ids in the current page. Never invent action types, property names, or ids. The page includes a scroll object with current position, remaining distance, and bottom/top flags. You may repeat scrolling while the page position changes; choose its amount based on the task and remaining distance. Do not scroll farther in a direction when already at that edge. A scroll is progress, not completion: for requests to reach the end, find something farther down, or read a page, keep done:false and re-scan after each scroll until the goal is met or the relevant edge is reached. For drag and draw, x/y are normalized within the target box: 0 is left/top and 1 is right/bottom. If the user says to manually draw after selecting a pencil/pen/brush, use draw with a multi-point path on the visible canvas or application surface; never replace drawing with a click. If the user says to move a selected pencil, use draw or drag, not click. If the request is vague (for example, just "click"), ask what to click with actions:[{"type":"speak","value":"..."}] and done:true. Never repeat an action listed as failed in history. Prefer one page-changing action then stop to re-scan. If information is missing, ask one concise question using speak and done:true. Carry out ordinary authoring work on websites, including creating or editing GitHub files, issues, comments, and pull requests. ${safetyLine}`;
 }
-async function callGemini({ apiKey, model, transcript, history, pageMap, session }) {
+async function callGemini({ apiKey, model, mode, transcript, history, pageMap, session }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const prompt = { command: transcript, session: { goal: session.goal, summary: session.summary, recentTurns: session.recentTurns, actionHistory: session.actionHistory.slice(-8) }, history, page: pageMap };
-  const body = { system_instruction: { parts: [{ text: buildSystemPrompt() }] }, contents: [{ role: "user", parts: [{ text: JSON.stringify(prompt) }] }], generationConfig: { temperature: 0.2, responseMimeType: "application/json" } };
+  const body = { system_instruction: { parts: [{ text: buildSystemPrompt(mode) }] }, contents: [{ role: "user", parts: [{ text: JSON.stringify(prompt) }] }], generationConfig: { temperature: 0.2, responseMimeType: "application/json" } };
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`Gemini API error (${res.status}): ${(await res.text()).slice(0, 300)}`);
   const text = (await res.json()).candidates?.[0]?.content?.parts?.[0]?.text;
@@ -88,7 +138,7 @@ function immediateVoiceResponse(transcript) {
 }
 
 async function handleVoiceCommand(transcript, startTabId) {
-  const { apiKey, model } = await getSettings();
+  const { apiKey, model, mode } = await getSettings();
   if (!apiKey) return { ok: false, message: "No Gemini API key set. Add one in Settings." };
   const session = await getSession(startTabId);
   session.active = true;
@@ -105,11 +155,11 @@ async function handleVoiceCommand(transcript, startTabId) {
   let lastSignature = "";
   for (let step = 0; step < MAX_STEPS; step++) {
     const pageMap = await scanTab(tabId);
-    let result = await callGemini({ apiKey, model, transcript, history, pageMap, session });
+    let result = await callGemini({ apiKey, model, mode, transcript, history, pageMap, session });
     let validationError = validateActions(result.actions || [], pageMap);
     if (validationError) {
       result = await callGemini({
-        apiKey, model, transcript,
+        apiKey, model, mode, transcript,
         history: [...history, { step, plannerError: `Your previous response was rejected: ${validationError}. Return corrected strict JSON using only current page ids.` }],
         pageMap, session
       });
@@ -123,6 +173,31 @@ async function handleVoiceCommand(transcript, startTabId) {
     const signature = `${scrollState}|${JSON.stringify(result.actions)}`;
     if (signature === lastSignature) return { ok: false, message: "I stopped to avoid repeating the same action." };
     lastSignature = signature;
+
+    // Safety gate: inspect every action against the current automation mode
+    // before anything touches the page.
+    const risky = (result.actions || [])
+      .map(action => ({ action, risk: classifyRisk(action, pageMap) }))
+      .filter(item => item.risk.level === "high");
+    if (risky.length) {
+      if (mode === "safe") {
+        const message = `Blocked in Safe mode: ${risky[0].risk.reason}. Switch to Assist or Full to run it with confirmation.`;
+        updateSummary(session, transcript, message); remember(session, "assistant", message); await saveSession(startTabId, session);
+        return { ok: false, message, speak: message };
+      }
+      const approved = await requestConfirmation({
+        mode,
+        url: pageMap.url,
+        title: pageMap.title,
+        items: risky.map(item => ({ type: item.action.type, reason: item.risk.reason, label: findElement(pageMap, item.action.target_id)?.label || "" }))
+      });
+      if (!approved) {
+        const message = "I paused and skipped that step because it was not confirmed.";
+        updateSummary(session, transcript, message); remember(session, "assistant", message); await saveSession(startTabId, session);
+        return { ok: false, message, speak: message };
+      }
+    }
+
     const pageActions = result.actions.filter(action => PAGE_ACTION_TYPES.has(action.type) && action.type !== "speak");
     const browserActions = result.actions.filter(action => BROWSER_ACTION_TYPES.has(action.type));
     const execResults = [];

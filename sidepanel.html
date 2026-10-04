@@ -15,8 +15,16 @@
     <p id="transcript" class="transcript" aria-live="polite"></p>
     <p id="status" class="status" aria-live="polite"></p>
     <div class="controls"><button id="micBtn" class="mic-btn"><span>🎤</span> <span id="micLabel">Start conversation</span></button><button id="stopBtn" class="stop-btn" disabled>End session</button></div>
-    <details class="settings"><summary>Settings</summary><label for="apiKey">Gemini API key</label><input id="apiKey" type="password" placeholder="AIza…" autocomplete="off" /><label for="model">Model</label><input id="model" type="text" placeholder="gemini-2.0-flash-lite" /><button id="saveBtn" class="save-btn">Save settings</button><p id="saveStatus" class="save-status"></p></details>
+    <details class="settings"><summary>Settings</summary><label for="apiKey">Gemini API key</label><input id="apiKey" type="password" placeholder="AIza…" autocomplete="off" /><label for="model">Model</label><input id="model" type="text" placeholder="gemini-2.0-flash-lite" /><label for="mode">Automation mode</label><select id="mode"><option value="safe">Safe — block risky steps</option><option value="assist">Assist — confirm risky steps</option><option value="full">Full — confirm only sensitive steps</option></select><button id="saveBtn" class="save-btn">Save settings</button><p id="saveStatus" class="save-status"></p></details>
   </main>
+  <div id="confirmOverlay" class="confirm-overlay" hidden>
+    <div class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <h2 id="confirmTitle">Confirm this step</h2>
+      <p id="confirmContext" class="confirm-context"></p>
+      <ul id="confirmList" class="confirm-list"></ul>
+      <div class="confirm-actions"><button id="confirmDeny" class="confirm-deny">Cancel</button><button id="confirmApprove" class="confirm-approve">Approve</button></div>
+    </div>
+  </div>
   <script src="sidepanel.js"></script>
 </body>
 </html>
