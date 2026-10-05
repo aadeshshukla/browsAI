@@ -1,6 +1,6 @@
 # VoiceBrowser
 
-Version: 1.0.0
+Version: 2.1.0
 
 VoiceBrowser is a Chrome extension that acts like an AI browser copilot. It listens to natural speech, inspects the current page, understands the user’s goal, and safely performs common browser tasks using Gemini-powered planning.
 
